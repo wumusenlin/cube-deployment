@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: analytics
+      POSTGRES_USER: analytics
+      POSTGRES_PASSWORD: analytics
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analytics -d analytics"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  cube:
+    image: cubejs/cube:v1.6.43
+    restart: unless-stopped
+    environment:
+      CUBEJS_DB_TYPE: postgres
+      CUBEJS_DB_HOST: postgres
+      CUBEJS_DB_PORT: 5432
+      CUBEJS_DB_NAME: analytics
+      CUBEJS_DB_USER: analytics
+      CUBEJS_DB_PASS: analytics
+      CUBEJS_API_SECRET: ${CUBE_API_SECRET:-local-cube-secret-change-me}
+      CUBEJS_CUBESTORE_HOST: cubestore_router
+      CUBEJS_DEV_MODE: "false"
+      CUBEJS_TELEMETRY: "false"
+    volumes:
+      - ./cube:/cube/conf:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cubestore_router:
+        condition: service_started
+      cube_refresh_worker:
+        condition: service_started
+    expose:
+      - "4000"
+
+  cube_refresh_worker:
+    image: cubejs/cube:v1.6.43
+    restart: unless-stopped
+    environment:
+      CUBEJS_DB_TYPE: postgres
+      CUBEJS_DB_HOST: postgres
+      CUBEJS_DB_PORT: 5432
+      CUBEJS_DB_NAME: analytics
+      CUBEJS_DB_USER: analytics
+      CUBEJS_DB_PASS: analytics
+      CUBEJS_API_SECRET: ${CUBE_API_SECRET:-local-cube-secret-change-me}
+      CUBEJS_CUBESTORE_HOST: cubestore_router
+      CUBEJS_REFRESH_WORKER: "true"
+      CUBEJS_DEV_MODE: "false"
+      CUBEJS_TELEMETRY: "false"
+    volumes:
+      - ./cube:/cube/conf:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cubestore_router:
+        condition: service_started
+      cubestore_worker:
+        condition: service_started
+
+  cubestore_router:
+    image: cubejs/cubestore:v1.6.43
+    restart: unless-stopped
+    environment:
+      CUBESTORE_WORKERS: cubestore_worker:10001
+      CUBESTORE_REMOTE_DIR: /cube/data
+      CUBESTORE_META_PORT: 9999
+      CUBESTORE_SERVER_NAME: cubestore_router:9999
+    volumes:
+      - cubestore-cluster-data:/cube/data
+    expose:
+      - "9999"
+
+  cubestore_worker:
+    image: cubejs/cubestore:v1.6.43
+    restart: unless-stopped
+    environment:
+      CUBESTORE_WORKERS: cubestore_worker:10001
+      CUBESTORE_SERVER_NAME: cubestore_worker:10001
+      CUBESTORE_WORKER_PORT: 10001
+      CUBESTORE_REMOTE_DIR: /cube/data
+      CUBESTORE_META_ADDR: cubestore_router:9999
+    volumes:
+      - cubestore-cluster-data:/cube/data
+    depends_on:
+      - cubestore_router
+    expose:
+      - "10001"
+
+  web:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      CUBE_API_URL: http://cube:4000/cubejs-api/v1
+      CUBE_API_SECRET: ${CUBE_API_SECRET:-local-cube-secret-change-me}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DASHSCOPE_MODEL: ${DASHSCOPE_MODEL:-qwen-plus}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      DEMO_TENANT_ID: ${DEMO_TENANT_ID:-tenant-a}
+      DEMO_USER_ROLE: ${DEMO_USER_ROLE:-analyst}
+    depends_on:
+      - cube
+    ports:
+      - "5555:5555"
+
+volumes:
+  cubestore-cluster-data:
+  postgres-data:
