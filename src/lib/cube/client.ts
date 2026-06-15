@@ -5,6 +5,8 @@ import type {
   CubeLoadResponse,
   CubeMember,
   CubeQuery,
+  CubeQueryExecution,
+  CubeSqlQuery,
   PublicCube,
   PublicMeta,
 } from "./types";
@@ -96,11 +98,11 @@ export async function fetchCubeMeta(
   return { cubes };
 }
 
-async function logCubeSql(
+async function fetchCubeSql(
   query: CubeQuery,
   context: UserContext,
   queryFingerprint: string
-): Promise<void> {
+): Promise<{ sqlQuery: CubeSqlQuery | null; error?: string }> {
   try {
     const searchParams = new URLSearchParams({
       format: "rest",
@@ -111,61 +113,74 @@ async function logCubeSql(
     const generatedSql = payload.sql?.sql;
 
     if (!response.ok || payload.error || payload.sql?.error || !generatedSql) {
-      console.warn(
-        "[Cube] SQL unavailable",
+      const error =
+        payload.error ||
+        payload.sql?.error ||
+        "Cube /sql 未返回生成的 SQL";
+
+      if (isCubeDebugEnabled()) {
+        console.warn(
+          "[Cube] SQL unavailable",
+          JSON.stringify(
+            {
+              queryFingerprint,
+              status: response.status,
+              error,
+            },
+            null,
+            2
+          )
+        );
+      }
+      return { sqlQuery: null, error };
+    }
+
+    const sqlQuery = {
+      sql: generatedSql[0],
+      params: generatedSql[1],
+    };
+
+    if (isCubeDebugEnabled()) {
+      console.info(
+        "[Cube] SQL",
         JSON.stringify(
           {
             queryFingerprint,
-            status: response.status,
-            error:
-              payload.error ||
-              payload.sql?.error ||
-              "Cube /sql 未返回生成的 SQL",
+            ...sqlQuery,
           },
           null,
           2
         )
       );
-      return;
     }
 
-    console.info(
-      "[Cube] SQL",
-      JSON.stringify(
-        {
-          queryFingerprint,
-          sql: generatedSql[0],
-          params: generatedSql[1],
-        },
-        null,
-        2
-      )
-    );
+    return { sqlQuery };
   } catch (error) {
-    console.warn(
-      "[Cube] SQL unavailable",
-      JSON.stringify(
-        {
-          queryFingerprint,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        null,
-        2
-      )
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    if (isCubeDebugEnabled()) {
+      console.warn(
+        "[Cube] SQL unavailable",
+        JSON.stringify(
+          {
+            queryFingerprint,
+            error: message,
+          },
+          null,
+          2
+        )
+      );
+    }
+    return { sqlQuery: null, error: message };
   }
 }
 
 export async function loadCubeQuery(
   query: CubeQuery,
   context: UserContext
-): Promise<CubeLoadResponse> {
+): Promise<CubeQueryExecution> {
   const debug = isCubeDebugEnabled();
   const queryFingerprint = getQueryFingerprint(query);
-
-  if (debug) {
-    await logCubeSql(query, context, queryFingerprint);
-  }
+  const sqlResult = await fetchCubeSql(query, context, queryFingerprint);
 
   for (let attempt = 0; attempt <= MAX_CONTINUE_WAIT_RETRIES; attempt += 1) {
     const startedAt = Date.now();
@@ -227,7 +242,12 @@ export async function loadCubeQuery(
       throw new Error(payload.error || `Cube /load 请求失败: ${response.status}`);
     }
 
-    return payload;
+    return {
+      result: payload,
+      sqlQuery: sqlResult.sqlQuery,
+      sqlError: sqlResult.error,
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   throw new Error("Cube 查询失败");

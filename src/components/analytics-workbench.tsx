@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { FormEvent, useEffect, useState } from "react";
 
 import type { ChartProtocol } from "@/lib/cube/schemas";
-import type { CubeQuery, PublicMeta } from "@/lib/cube/types";
+import type { CubeQuery, CubeSqlQuery, PublicMeta } from "@/lib/cube/types";
 
 const ChartRenderer = dynamic(
   () => import("./chart-renderer").then((module) => module.ChartRenderer),
@@ -42,6 +42,9 @@ interface LlmResponse {
 interface QueryResponse {
   data: Array<Record<string, string | number | null>>;
   query: CubeQuery;
+  sqlQuery: CubeSqlQuery | null;
+  sqlError?: string;
+  updatedAt: string;
   chart: ChartProtocol;
   context: {
     tenantId: string;
@@ -56,10 +59,35 @@ async function readJson<T>(response: Response): Promise<T> {
   return payload;
 }
 
+function formatUpdatedAt(value: string): string {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    fractionalSecondDigits: 3,
+    hour12: false,
+  }).formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}:${part("second")}.${part("fractionalSecond")}`;
+}
+
+function formatSqlQuery(sqlQuery: CubeSqlQuery | null, error?: string): string {
+  if (!sqlQuery) return error ? `SQL 生成失败：${error}` : "";
+  return `-- params: ${JSON.stringify(sqlQuery.params)}\n${sqlQuery.sql}`;
+}
+
 export function AnalyticsWorkbench() {
   const [prompt, setPrompt] = useState(PRESETS[0]);
   const [meta, setMeta] = useState<MetaResponse | null>(null);
   const [queryText, setQueryText] = useState("");
+  const [sqlQueryText, setSqlQueryText] = useState("");
+  const [queryUpdatedAt, setQueryUpdatedAt] = useState("");
   const [chart, setChart] = useState<ChartProtocol | null>(null);
   const [data, setData] = useState<
     Array<Record<string, string | number | null>>
@@ -103,6 +131,8 @@ export function AnalyticsWorkbench() {
     );
 
     setQueryText(JSON.stringify(result.query, null, 2));
+    setSqlQueryText(formatSqlQuery(result.sqlQuery, result.sqlError));
+    setQueryUpdatedAt(formatUpdatedAt(result.updatedAt));
     setChart(result.chart);
     setData(result.data);
     setStatus(`查询完成，共 ${result.data.length} 行`);
@@ -219,7 +249,10 @@ export function AnalyticsWorkbench() {
 
           <div className="query-editor">
             <div className="query-editor-title">
-              <label htmlFor="query-json">Cube Query</label>
+              <div>
+                <label htmlFor="query-json">Cube Query</label>
+                <time>{queryUpdatedAt ? `更新时间：${queryUpdatedAt}` : ""}</time>
+              </div>
               <button
                 type="button"
                 disabled={!queryText || loading}
@@ -235,6 +268,24 @@ export function AnalyticsWorkbench() {
               onChange={(event) => setQueryText(event.target.value)}
               placeholder="生成后的受控查询会显示在这里"
               rows={13}
+              spellCheck={false}
+            />
+          </div>
+
+          <div className="query-editor">
+            <div className="query-editor-title">
+              <div>
+                <label htmlFor="sql-query">SQL Query</label>
+                <time>{queryUpdatedAt ? `更新时间：${queryUpdatedAt}` : ""}</time>
+              </div>
+            </div>
+            <textarea
+              id="sql-query"
+              className="code-textarea sql-textarea"
+              value={sqlQueryText}
+              placeholder="Cube Query 对应的 SQL 和参数会显示在这里"
+              rows={13}
+              readOnly
               spellCheck={false}
             />
           </div>

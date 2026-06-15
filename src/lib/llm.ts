@@ -460,28 +460,7 @@ export async function generateAnalytics(
   const currentWeek = getCurrentWeekDateRange();
   const requestUrl = `${baseUrl}/chat/completions`;
   const startedAt = Date.now();
-
-  if (debug) {
-    console.info(
-      "[Bailian] request",
-      JSON.stringify({ url: requestUrl, model, prompt }, null, 2)
-    );
-  }
-
-  const response = await fetch(requestUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: `你是 Cube 查询规划器。只能使用给定语义模型生成只读聚合查询。
+  const systemPrompt = `你是 Cube 查询规划器。只能使用给定语义模型生成只读聚合查询。
 
 约束：
 1. 只输出 JSON，不输出 Markdown。
@@ -501,39 +480,69 @@ export async function generateAnalytics(
 {"query":{},"chart":{"type":"bar","title":"图表标题","category":"维度成员","value":"指标成员","valueFormat":"number"},"explanation":"查询说明"}
 
 语义模型：
-${buildSemanticSchema(meta)}`,
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    }),
-    cache: "no-store",
-  });
+${buildSemanticSchema(meta)}`;
+  const messages = [
+    {
+      role: "system",
+      content: systemPrompt,
+    },
+    {
+      role: "user",
+      content: prompt,
+    },
+  ];
 
-  const payload = (await response.json()) as LlmResponse;
   if (debug) {
     console.info(
-      "[Bailian] response",
+      "[Bailian] prompt",
       JSON.stringify(
         {
-          status: response.status,
-          durationMs: Date.now() - startedAt,
-          requestId: response.headers.get("x-request-id"),
-          body: payload,
+          url: requestUrl,
+          model,
+          messages,
         },
         null,
         2
       )
     );
   }
+
+  const response = await fetch(requestUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages,
+    }),
+    cache: "no-store",
+  });
+
+  const payload = (await response.json()) as LlmResponse;
   if (!response.ok) {
     throw new Error(payload.error?.message || `LLM 请求失败: ${response.status}`);
   }
 
   const content = payload.choices?.[0]?.message?.content;
   if (!content) throw new Error("LLM 返回为空");
+
+  if (debug) {
+    console.info(
+      "[Bailian] content",
+      JSON.stringify(
+        {
+          durationMs: Date.now() - startedAt,
+          content,
+        },
+        null,
+        2
+      )
+    );
+  }
 
   const parsed = extractJson(content) as {
     query?: unknown;
@@ -549,13 +558,6 @@ ${buildSemanticSchema(meta)}`,
         normalizeGeneratedChart(parsed.chart, query, meta, prompt)
       )
     : deriveChartProtocol(query, meta, prompt);
-
-  if (debug) {
-    console.info(
-      "[Bailian] normalized",
-      JSON.stringify({ query, chart }, null, 2)
-    );
-  }
 
   return {
     query,

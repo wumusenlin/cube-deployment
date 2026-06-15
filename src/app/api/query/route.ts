@@ -28,9 +28,12 @@ export async function POST(request: Request) {
       : deriveChartProtocol(validatedQuery, meta, "查询结果");
 
     return Response.json({
-      data: result.data ?? [],
-      annotation: result.annotation ?? {},
+      data: result.result.data ?? [],
+      annotation: result.result.annotation ?? {},
       query: validatedQuery,
+      sqlQuery: result.sqlQuery,
+      sqlError: result.sqlError,
+      updatedAt: result.updatedAt,
       chart,
       context: {
         tenantId: context.tenantId,

@@ -261,12 +261,31 @@ textarea:focus {
   font-weight: 700;
 }
 
+.query-editor-title > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.query-editor-title time {
+  color: var(--muted);
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  font-weight: 400;
+}
+
 .code-textarea {
   min-height: 255px;
   color: #d8e5de;
   background: #172420;
   font-family: "Courier New", monospace;
   font-size: 12px;
+}
+
+.sql-textarea {
+  min-height: 300px;
+  resize: vertical;
 }
 
 .result-panel {

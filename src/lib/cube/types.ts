@@ -79,3 +79,15 @@ export interface CubeLoadResponse {
   annotation?: Record<string, unknown>;
   error?: string;
 }
+
+export interface CubeSqlQuery {
+  sql: string;
+  params: unknown[] | Record<string, unknown>;
+}
+
+export interface CubeQueryExecution {
+  result: CubeLoadResponse;
+  sqlQuery: CubeSqlQuery | null;
+  sqlError?: string;
+  updatedAt: string;
+}
