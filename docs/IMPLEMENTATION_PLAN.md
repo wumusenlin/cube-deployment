@@ -11,20 +11,21 @@ Browser
        -> Tenant/role policy injection
        -> Cube REST API
             -> YAML semantic model
-            -> PostgreSQL
+            -> Online MySQL
 ```
 
 Cube Core、数据库和模型服务均不直接暴露给浏览器。
 
 ## 当前 MVP
 
-- Docker Compose 启动 PostgreSQL、Cube Store、Cube Core、Next.js。
-- Cube YAML 定义订单指标和维度。
+- Docker Compose 启动 Cube Store、Cube Core、Next.js。
+- Cube Core 通过本地 `.env.mysql` 连接线上 MySQL。
+- Cube YAML 定义报销、专项费用、预算项和项目指标及关系。
 - Next.js 封装 `/meta`、`/load` 和 Cube JWT。
 - LLM 只生成受限 JSON，不生成 SQL。
 - 查询成员按 Cube `/meta` 白名单校验。
 - 限制 measures、dimensions、filters、limit 和操作符。
-- `Orders.tenantId` 不进入 LLM 可用 schema。
+- 各 Cube 的 `organizationId` 不进入 LLM 可用 schema。
 - Next.js 和 Cube `queryRewrite` 双重追加租户过滤。
 - 前端按统一图表协议渲染 bar、line、area、pie、kpi、table。
 - 未配置 LLM 时提供本地规则 fallback，保证部署闭环可验证。
@@ -62,7 +63,7 @@ Cube Core、数据库和模型服务均不直接暴露给浏览器。
 ## 验收标准
 
 1. 浏览器网络请求中不存在 Cube 密钥和 LLM 密钥。
-2. 用户 Query 无法指定 `Orders.tenantId`。
+2. 用户 Query 无法指定任何 `organizationId`。
 3. 即使绕过 Next.js，Cube `queryRewrite` 仍强制租户过滤。
 4. 非 `/meta` 白名单成员全部被拒绝。
 5. 查询行数、过滤数和成员数受上限控制。

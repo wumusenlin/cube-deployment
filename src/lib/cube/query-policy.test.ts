@@ -9,28 +9,28 @@ import type { PublicMeta } from "./types";
 const meta: PublicMeta = {
   cubes: [
     {
-      name: "Orders",
-      title: "Orders",
+      name: "Reimburse",
+      title: "报销单",
       measures: [
         {
-          name: "Orders.count",
-          title: "订单数",
-          shortTitle: "订单数",
+          name: "Reimburse.count",
+          title: "报销单数量",
+          shortTitle: "报销单数量",
           type: "number",
         },
       ],
       dimensions: [
         {
-          name: "Orders.status",
-          title: "状态",
-          shortTitle: "状态",
-          type: "string",
+          name: "Reimburse.statusId",
+          title: "状态ID",
+          shortTitle: "状态ID",
+          type: "number",
         },
         {
-          name: "Orders.tenantId",
-          title: "租户",
-          shortTitle: "租户",
-          type: "string",
+          name: "Reimburse.organizationId",
+          title: "组织ID",
+          shortTitle: "组织ID",
+          type: "number",
         },
       ],
     },
@@ -41,49 +41,76 @@ describe("query policy", () => {
   it("accepts known semantic members", () => {
     const query = validateGeneratedQuery(
       {
-        measures: ["Orders.count"],
-        dimensions: ["Orders.status"],
+        measures: ["Reimburse.count"],
+        dimensions: ["Reimburse.statusId"],
         limit: 20,
       },
       meta
     );
 
-    expect(query.measures).toEqual(["Orders.count"]);
+    expect(query.measures).toEqual(["Reimburse.count"]);
   });
 
   it("rejects protected tenant members", () => {
     expect(() =>
       validateGeneratedQuery(
         {
-          measures: ["Orders.count"],
-          dimensions: ["Orders.tenantId"],
+          measures: ["Reimburse.count"],
+          dimensions: ["Reimburse.organizationId"],
         },
         meta
       )
-    ).toThrow("Orders.tenantId");
+    ).toThrow("Reimburse.organizationId");
   });
 
   it("overwrites tenant filters with the authenticated tenant", () => {
     const authorized = applyAccessPolicy(
       {
-        measures: ["Orders.count"],
+        measures: ["Reimburse.count"],
         filters: [
           {
-            member: "Orders.tenantId",
+            member: "Reimburse.organizationId",
             operator: "equals",
-            values: ["tenant-b"],
+            values: ["300"],
           },
         ],
       },
-      "tenant-a"
+      "200"
     );
 
     expect(authorized.filters).toEqual([
       {
-        member: "Orders.tenantId",
+        member: "Reimburse.organizationId",
         operator: "equals",
-        values: ["tenant-a"],
+        values: ["200"],
+      },
+      {
+        member: "Reimburse.statusId",
+        operator: "equals",
+        values: ["2", "4"],
       },
     ]);
+  });
+
+  it("keeps an explicit reimburse status filter", () => {
+    const authorized = applyAccessPolicy(
+      {
+        measures: ["Reimburse.count"],
+        filters: [
+          {
+            member: "Reimburse.statusId",
+            operator: "equals",
+            values: ["3"],
+          },
+        ],
+      },
+      "200"
+    );
+
+    expect(authorized.filters).toContainEqual({
+      member: "Reimburse.statusId",
+      operator: "equals",
+      values: ["3"],
+    });
   });
 });

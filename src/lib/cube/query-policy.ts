@@ -2,7 +2,59 @@ import type { CubeQuery, PublicMeta } from "./types";
 import { cubeQuerySchema } from "./schemas";
 import { RequestValidationError } from "../errors";
 
-export const PROTECTED_MEMBERS = new Set(["Orders.tenantId"]);
+interface CubePolicy {
+  organizationMember: string;
+  statusMember?: string;
+}
+
+const CUBE_POLICIES: Record<string, CubePolicy> = {
+  Reimburse: {
+    organizationMember: "Reimburse.organizationId",
+    statusMember: "Reimburse.statusId",
+  },
+  LaborFeeDetail: {
+    organizationMember: "Reimburse.organizationId",
+    statusMember: "Reimburse.statusId",
+  },
+  TravelFeeDetail: {
+    organizationMember: "Reimburse.organizationId",
+    statusMember: "Reimburse.statusId",
+  },
+  TrainingFee: {
+    organizationMember: "Reimburse.organizationId",
+    statusMember: "Reimburse.statusId",
+  },
+  MeetingFee: {
+    organizationMember: "Reimburse.organizationId",
+    statusMember: "Reimburse.statusId",
+  },
+  OfficialFeeDetail: {
+    organizationMember: "Reimburse.organizationId",
+    statusMember: "Reimburse.statusId",
+  },
+  OfficialTransportFeeDetail: {
+    organizationMember: "Reimburse.organizationId",
+    statusMember: "Reimburse.statusId",
+  },
+  AbroadFeeDetail: {
+    organizationMember: "Reimburse.organizationId",
+    statusMember: "Reimburse.statusId",
+  },
+  ReimburseItem: {
+    organizationMember: "Reimburse.organizationId",
+    statusMember: "Reimburse.statusId",
+  },
+  Project: {
+    organizationMember: "Project.organizationId",
+  },
+  BudgetItem: {
+    organizationMember: "BudgetItem.organizationId",
+  },
+};
+
+export const PROTECTED_MEMBERS = new Set(
+  Object.values(CUBE_POLICIES).map((policy) => policy.organizationMember)
+);
 
 interface MemberIndex {
   measures: Set<string>;
@@ -71,19 +123,46 @@ export function applyAccessPolicy(
 ): CubeQuery {
   if (!tenantId) throw new RequestValidationError("缺少租户上下文");
 
+  const requestedPolicies = [
+    ...new Set(query.measures.map((member) => member.split(".")[0])),
+  ].map((cubeName) => CUBE_POLICIES[cubeName]);
+
+  if (requestedPolicies.some((policy) => !policy)) {
+    throw new RequestValidationError("查询包含不支持的 Cube");
+  }
+  const policies = requestedPolicies.filter(
+    (policy): policy is CubePolicy => Boolean(policy)
+  );
+
   const filters = (query.filters ?? []).filter(
     (filter) => !PROTECTED_MEMBERS.has(filter.member)
+  );
+  const existingMembers = new Set(filters.map((filter) => filter.member));
+  const organizationMembers = new Set(
+    policies.map((policy) => policy.organizationMember)
+  );
+  const statusMembers = new Set(
+    policies
+      .map((policy) => policy.statusMember)
+      .filter((member): member is string => Boolean(member))
   );
 
   return {
     ...query,
     filters: [
       ...filters,
-      {
-        member: "Orders.tenantId",
-        operator: "equals",
+      ...[...organizationMembers].map((member) => ({
+        member,
+        operator: "equals" as const,
         values: [tenantId],
-      },
+      })),
+      ...[...statusMembers]
+        .filter((member) => !existingMembers.has(member))
+        .map((member) => ({
+          member,
+          operator: "equals" as const,
+          values: ["2", "4"],
+        })),
     ],
   };
 }

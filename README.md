@@ -8,14 +8,40 @@
 - `src/app/api/`：Next.js BFF、LLM 代理、Cube API 封装。
 - `src/lib/cube/`：查询契约、白名单校验、图表协议。
 - `src/components/`：自然语言工作台和图表渲染。
-- `infra/postgres/`：本地演示数据。
+- `.env.mysql`：线上 MySQL 连接配置，仅保存在本地。
 - `docs/IMPLEMENTATION_PLAN.md`：分阶段生产化规划。
+
+## 配置线上 MySQL
+
+```bash
+cp .env.example .env
+cp .env.mysql.example .env.mysql
+```
+
+然后填写 `.env.mysql`：
+
+```dotenv
+CUBEJS_DB_TYPE=mysql
+CUBEJS_DB_HOST=真实地址
+CUBEJS_DB_PORT=3306
+CUBEJS_DB_NAME=真实数据库名
+CUBEJS_DB_USER=真实用户名
+CUBEJS_DB_PASS=真实密码
+CUBEJS_DB_SSL=true
+```
+
+`.env.mysql` 已加入 `.gitignore`，不会提交数据库密码。线上 MySQL 需要允许当前机器的公网出口 IP 访问。数据库不支持 SSL 时将 `CUBEJS_DB_SSL` 改为 `false`。
+
+检查配置：
+
+```bash
+npm run db:check
+```
 
 ## 一键启动
 
 ```bash
-cp .env.example .env
-docker compose up --build
+npm run dev
 ```
 
 打开 `http://localhost:5555`。
@@ -38,8 +64,8 @@ DASHSCOPE_MODEL=qwen-plus
 npm run dev
 ```
 
-该命令会自动启动 Docker Desktop、PostgreSQL、Cube Store、Cube Core，
-然后启动支持热更新的 Next.js。
+该命令会先校验 `.env.mysql`，再自动启动 Docker Desktop、Cube Store、
+Cube Core，最后启动支持热更新的 Next.js。
 
 如果只需启动 Docker 基础服务：
 
@@ -56,26 +82,50 @@ CUBE_API_URL=http://localhost:4000/cubejs-api/v1
 默认 Compose 不向宿主机暴露 Cube；`docker-compose.dev.yml` 只绑定
 `127.0.0.1:4000`，供本地 Next.js 服务访问。
 
-## Cube 缓存调试
+## 数据模型
+
+`cube/model/finance.yml` 根据 `metric-definitions.json` 和线上 MySQL
+实际字段生成，包含：
+
+- `Reimburse`：报销单金额、明细、部门、申请人、状态。
+- `Department`：报销部门名称，通过 `reimburse.department_id` 关联。
+- `LaborFeeDetail`：劳务费和税后金额。
+- `TravelFeeDetail`：差旅、住宿、伙食、交通等金额。
+- `TrainingFee`、`MeetingFee`：仅关联 `bill_type='Reimburse'` 的记录。
+- `OfficialFeeDetail`、`OfficialTransportFeeDetail`、`AbroadFeeDetail`。
+- `ReimburseItem`：关联报销单和预算项。
+- `BudgetItem`：关联项目并提供预算执行指标。
+- `Project`：项目数量、部门和负责人维度。
+- `ProjectDepartment`：项目部门名称，通过 `project.department_id` 关联。
+
+费用明细通过 `reimburse_id` 关联 `Reimburse`；
+`ReimburseItem.parent_id` 关联报销单，
+`ReimburseItem.budget_item_id` 关联预算项，
+`BudgetItem.project_id` 关联项目。
+
+系统默认按组织 `200` 隔离数据。报销和费用类查询在没有明确状态条件时，
+默认只统计状态 `2`、`4` 的有效单据。
+
+## Cube 调试
 
 `.env` 设置 `CUBE_DEBUG=true` 后，Next.js 终端会输出每次 Cube 查询的
-`queryFingerprint`、耗时和状态。完全相同的查询应具有相同指纹。
+`queryFingerprint`、生成 SQL、SQL 参数、耗时和状态：
 
-开启 PostgreSQL SQL 日志：
-
-```bash
-npm run cache:debug:on
-npm run cache:logs
+```text
+[Cube] SQL {
+  "queryFingerprint": "...",
+  "sql": "SELECT ... WHERE ... = ?",
+  "params": ["200"]
+}
 ```
 
-连续执行两次相同查询。如果第一次日志出现 `public.orders` SQL，而第二次没有，
-说明第二次命中了 Cube 查询结果缓存。当前模型没有配置 `pre_aggregations`，
-因此这里验证的不是预聚合缓存。
+SQL 来自 Cube `/v1/sql` 调试接口，与正式 `/v1/load` 使用相同的受控
+Cube Query。它仅用于排查，不应绕过 Cube 直接执行。
 
-调试结束后关闭 SQL 日志：
+查看 Cube 容器日志：
 
 ```bash
-npm run cache:debug:off
+npm run cube:logs
 ```
 
 ## API

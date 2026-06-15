@@ -6,21 +6,21 @@ import type { PublicMeta } from "./types";
 const meta: PublicMeta = {
   cubes: [
     {
-      name: "Orders",
-      title: "Orders",
+      name: "Reimburse",
+      title: "报销单",
       measures: [
         {
-          name: "Orders.revenue",
-          title: "销售额",
-          shortTitle: "销售额",
+          name: "Reimburse.totalAmount",
+          title: "报销金额",
+          shortTitle: "报销金额",
           type: "number",
         },
       ],
       dimensions: [
         {
-          name: "Orders.createdAt",
-          title: "下单时间",
-          shortTitle: "下单时间",
+          name: "Reimburse.applyDate",
+          title: "申请时间",
+          shortTitle: "申请时间",
           type: "time",
         },
       ],
@@ -32,9 +32,9 @@ describe("chart protocol", () => {
   it("uses a line chart for time series queries", () => {
     const chart = deriveChartProtocol(
       {
-        measures: ["Orders.revenue"],
+        measures: ["Reimburse.totalAmount"],
         timeDimensions: [
-          { dimension: "Orders.createdAt", granularity: "month" },
+          { dimension: "Reimburse.applyDate", granularity: "month" },
         ],
       },
       meta

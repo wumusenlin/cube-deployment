@@ -9,7 +9,7 @@ export interface UserContext {
 export function getUserContext(): UserContext {
   return {
     userId: "demo-user",
-    tenantId: process.env.DEMO_TENANT_ID || "tenant-a",
+    tenantId: process.env.DEMO_TENANT_ID || "200",
     role: process.env.DEMO_USER_ROLE || "analyst",
   };
 }

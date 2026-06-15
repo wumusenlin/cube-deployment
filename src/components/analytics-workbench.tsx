@@ -15,11 +15,13 @@ const ChartRenderer = dynamic(
 );
 
 const PRESETS = [
-  "查询本周的订单数据列表",
-  "按订单状态统计订单数量",
-  "按商品分类统计销售额",
-  "查看每月销售额趋势",
-  "按区域统计平均订单金额",
+  "查询本周的有效报销单列表",
+  "按部门名称统计报销金额",
+  "查看每月报销金额趋势",
+  "按部门名称统计劳务费金额和税后金额",
+  "按部门名称统计差旅费、住宿费和交通费",
+  "按预算项和项目统计报销金额",
+  "按项目统计预算金额、执行金额和可用预算",
 ];
 
 interface MetaResponse extends PublicMeta {
@@ -195,7 +197,7 @@ export function AnalyticsWorkbench() {
               id="prompt"
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
-              placeholder="例如：查看每月销售额趋势"
+              placeholder="例如：按部门名称统计本年度报销金额"
               rows={5}
             />
             <div className="preset-list">

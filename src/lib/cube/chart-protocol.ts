@@ -34,7 +34,7 @@ export function deriveChartProtocol(
     category,
     value,
     series,
-    valueFormat: value.toLowerCase().includes("revenue")
+    valueFormat: /amount|revenue/.test(value.toLowerCase())
       ? "currency"
       : "number",
   };

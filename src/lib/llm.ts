@@ -4,7 +4,10 @@ import {
   deriveChartProtocol,
   validateChartAgainstQuery,
 } from "./cube/chart-protocol";
-import { validateGeneratedQuery } from "./cube/query-policy";
+import {
+  PROTECTED_MEMBERS,
+  validateGeneratedQuery,
+} from "./cube/query-policy";
 import {
   FILTER_OPERATORS,
   TIME_GRANULARITIES,
@@ -66,7 +69,7 @@ function buildSemanticSchema(meta: PublicMeta): string {
         .map((member) => `${member.name}(${member.title})`)
         .join(", ");
       const dimensions = cube.dimensions
-        .filter((member) => member.name !== "Orders.tenantId")
+        .filter((member) => !PROTECTED_MEMBERS.has(member.name))
         .map((member) => `${member.name}(${member.title},${member.type})`)
         .join(", ");
       return `Cube ${cube.name}\nMeasures: ${measures}\nDimensions: ${dimensions}`;
@@ -341,7 +344,7 @@ function normalizeGeneratedChart(
 
 function buildFallback(prompt: string, meta: PublicMeta): GeneratedAnalytics {
   const normalized = prompt.toLowerCase();
-  const isDetailList = /列表|明细|订单数据|订单记录|detail|list/.test(
+  const isDetailList = /列表|明细|报销单|报销记录|detail|list/.test(
     normalized
   );
   const isCurrentWeek = /本周|这周|本星期|this week/.test(normalized);
@@ -349,23 +352,23 @@ function buildFallback(prompt: string, meta: PublicMeta): GeneratedAnalytics {
   if (isDetailList && isCurrentWeek) {
     const dateRange = getCurrentWeekDateRange();
     const query: CubeQuery = {
-      measures: ["Orders.count"],
+      measures: ["Reimburse.count"],
       dimensions: [
-        "Orders.id",
-        "Orders.status",
-        "Orders.category",
-        "Orders.region",
-        "Orders.amount",
-        "Orders.createdAt",
+        "Reimburse.id",
+        "Reimburse.code",
+        "Reimburse.applyDate",
+        "Department.name",
+        "Reimburse.amount",
+        "Reimburse.statusId",
       ],
       timeDimensions: [
         {
-          dimension: "Orders.createdAt",
+          dimension: "Reimburse.applyDate",
           dateRange,
         },
       ],
       order: {
-        "Orders.createdAt": "desc",
+        "Reimburse.applyDate": "desc",
       },
       limit: 200,
       timezone: "Asia/Shanghai",
@@ -376,45 +379,52 @@ function buildFallback(prompt: string, meta: PublicMeta): GeneratedAnalytics {
       query: validated,
       chart: {
         type: "table",
-        title: `本周订单列表（${dateRange[0]} 至 ${dateRange[1]}）`,
-        value: "Orders.count",
+        title: `本周报销单列表（${dateRange[0]} 至 ${dateRange[1]}）`,
+        value: "Reimburse.count",
         valueFormat: "number",
         columns: [
-          { member: "Orders.id", title: "订单ID", format: "number" },
+          { member: "Reimburse.id", title: "报销单ID", format: "number" },
+          { member: "Reimburse.code", title: "报销单号", format: "text" },
           {
-            member: "Orders.createdAt",
-            title: "下单时间",
+            member: "Reimburse.applyDate",
+            title: "申请时间",
             format: "datetime",
           },
-          { member: "Orders.status", title: "订单状态", format: "text" },
-          { member: "Orders.category", title: "商品分类", format: "text" },
-          { member: "Orders.region", title: "区域", format: "text" },
-          { member: "Orders.amount", title: "订单金额", format: "currency" },
+          {
+            member: "Department.name",
+            title: "部门名称",
+            format: "text",
+          },
+          {
+            member: "Reimburse.amount",
+            title: "报销金额",
+            format: "currency",
+          },
+          {
+            member: "Reimburse.statusId",
+            title: "状态ID",
+            format: "number",
+          },
         ],
       },
-      explanation: `查询上海时区本周（${dateRange[0]} 至 ${dateRange[1]}）的订单明细，按下单时间倒序。`,
+      explanation: `查询上海时区本周（${dateRange[0]} 至 ${dateRange[1]}）的有效报销单，按申请时间倒序。`,
       provider: "fallback",
     };
   }
 
-  const isAverage = /平均|均值|average/.test(normalized);
-  const isRevenue = /销售额|金额|收入|revenue/.test(normalized);
+  const isAmount = /金额|总额|合计|amount/.test(normalized);
   const isTime = /趋势|每天|每日|月份|月度|时间|trend/.test(normalized);
-  const measure = isAverage
-    ? "Orders.averageAmount"
-    : isRevenue
-      ? "Orders.revenue"
-      : "Orders.count";
+  const measure = isAmount ? "Reimburse.totalAmount" : "Reimburse.count";
 
-  let dimension = "Orders.status";
-  if (/分类|品类|category/.test(normalized)) dimension = "Orders.category";
-  if (/区域|地区|region/.test(normalized)) dimension = "Orders.region";
+  let dimension = "Reimburse.statusId";
+  if (/部门/.test(normalized)) dimension = "Department.name";
+  if (/申请人|人员/.test(normalized)) dimension = "Reimburse.applyUserId";
 
   const query: CubeQuery = {
     measures: [measure],
     dimensions: isTime ? undefined : [dimension],
     timeDimensions: isTime
-      ? [{ dimension: "Orders.createdAt", granularity: "month" }]
+      ? [{ dimension: "Reimburse.applyDate", granularity: "month" }]
       : undefined,
     order: {
       [measure]: "desc",
@@ -477,16 +487,17 @@ export async function generateAnalytics(
 1. 只输出 JSON，不输出 Markdown。
 2. query 只允许 measures、dimensions、timeDimensions、filters、order、limit。
 3. measures 1-3 个，dimensions 0-6 个，limit 1-500。
-   order 必须是对象，例如 {"Orders.createdAt":"desc"}，禁止输出数组。
-4. 禁止使用 Orders.tenantId，权限过滤由后端追加。
+   order 必须是对象，例如 {"Reimburse.applyDate":"desc"}，禁止输出数组。
+4. 禁止使用任何 organizationId 维度，组织权限过滤由后端追加。
 5. chart.type 只能是 bar、line、area、pie、kpi、table。
-6. 当用户要求列表、明细或记录时，chart.type 必须为 table；query 需要包含 Orders.id，时间按 Orders.createdAt desc 排序。
+6. 当用户要求列表、明细或记录时，chart.type 必须为 table；选择对应 Cube 的 id 和业务字段，并按适合的时间维度倒序。
 7. chart.title、chart.value 必填；chart.value 必须是 query.measures 中的成员。
 8. table 必须输出 columns，每列结构为 {"member":"","title":"","format":"text|number|currency|date|datetime"}。
    非 table 图表不要输出 columns；可选字段没有值时直接省略，不要输出空字符串或空数组。
-9. timeDimensions 的图表 category 必须使用原始维度名，例如 Orders.createdAt，禁止输出 Orders.createdAt.month。
+9. timeDimensions 的图表 category 必须使用原始维度名，例如 Reimburse.applyDate，禁止输出 Reimburse.applyDate.month。
 10. 当前上海时区本周范围是 ${currentWeek[0]} 至 ${currentWeek[1]}，相对日期必须转换成明确 dateRange。
-11. 输出结构：
+11. 报销及费用类查询默认只统计有效单据，即 Reimburse.statusId 为 2 或 4；用户明确指定其他状态时按用户条件查询。
+12. 输出结构：
 {"query":{},"chart":{"type":"bar","title":"图表标题","category":"维度成员","value":"指标成员","valueFormat":"number"},"explanation":"查询说明"}
 
 语义模型：

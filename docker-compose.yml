@@ -1,30 +1,10 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: analytics
-      POSTGRES_USER: analytics
-      POSTGRES_PASSWORD: analytics
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U analytics -d analytics"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   cube:
     image: cubejs/cube:v1.6.43
     restart: unless-stopped
+    env_file:
+      - .env.mysql
     environment:
-      CUBEJS_DB_TYPE: postgres
-      CUBEJS_DB_HOST: postgres
-      CUBEJS_DB_PORT: 5432
-      CUBEJS_DB_NAME: analytics
-      CUBEJS_DB_USER: analytics
-      CUBEJS_DB_PASS: analytics
       CUBEJS_API_SECRET: ${CUBE_API_SECRET:-local-cube-secret-change-me}
       CUBEJS_CUBESTORE_HOST: cubestore_router
       CUBEJS_DEV_MODE: "false"
@@ -32,8 +12,6 @@ services:
     volumes:
       - ./cube:/cube/conf:ro
     depends_on:
-      postgres:
-        condition: service_healthy
       cubestore_router:
         condition: service_started
       cube_refresh_worker:
@@ -44,13 +22,9 @@ services:
   cube_refresh_worker:
     image: cubejs/cube:v1.6.43
     restart: unless-stopped
+    env_file:
+      - .env.mysql
     environment:
-      CUBEJS_DB_TYPE: postgres
-      CUBEJS_DB_HOST: postgres
-      CUBEJS_DB_PORT: 5432
-      CUBEJS_DB_NAME: analytics
-      CUBEJS_DB_USER: analytics
-      CUBEJS_DB_PASS: analytics
       CUBEJS_API_SECRET: ${CUBE_API_SECRET:-local-cube-secret-change-me}
       CUBEJS_CUBESTORE_HOST: cubestore_router
       CUBEJS_REFRESH_WORKER: "true"
@@ -59,8 +33,6 @@ services:
     volumes:
       - ./cube:/cube/conf:ro
     depends_on:
-      postgres:
-        condition: service_healthy
       cubestore_router:
         condition: service_started
       cubestore_worker:
@@ -108,7 +80,7 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
-      DEMO_TENANT_ID: ${DEMO_TENANT_ID:-tenant-a}
+      DEMO_TENANT_ID: ${DEMO_TENANT_ID:-200}
       DEMO_USER_ROLE: ${DEMO_USER_ROLE:-analyst}
     depends_on:
       - cube
@@ -117,4 +89,3 @@ services:
 
 volumes:
   cubestore-cluster-data:
-  postgres-data:

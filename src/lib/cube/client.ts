@@ -28,6 +28,15 @@ function getCubeApiUrl(): string {
   return (process.env.CUBE_API_URL || DEFAULT_CUBE_URL).replace(/\/$/, "");
 }
 
+interface CubeSqlResponse {
+  sql?: {
+    status?: string;
+    sql?: [string, unknown[] | Record<string, unknown>];
+    error?: string;
+  };
+  error?: string;
+}
+
 async function cubeFetch(
   path: string,
   context: UserContext,
@@ -87,12 +96,76 @@ export async function fetchCubeMeta(
   return { cubes };
 }
 
+async function logCubeSql(
+  query: CubeQuery,
+  context: UserContext,
+  queryFingerprint: string
+): Promise<void> {
+  try {
+    const searchParams = new URLSearchParams({
+      format: "rest",
+      query: JSON.stringify(query),
+    });
+    const response = await cubeFetch(`/sql?${searchParams}`, context);
+    const payload = (await response.json()) as CubeSqlResponse;
+    const generatedSql = payload.sql?.sql;
+
+    if (!response.ok || payload.error || payload.sql?.error || !generatedSql) {
+      console.warn(
+        "[Cube] SQL unavailable",
+        JSON.stringify(
+          {
+            queryFingerprint,
+            status: response.status,
+            error:
+              payload.error ||
+              payload.sql?.error ||
+              "Cube /sql 未返回生成的 SQL",
+          },
+          null,
+          2
+        )
+      );
+      return;
+    }
+
+    console.info(
+      "[Cube] SQL",
+      JSON.stringify(
+        {
+          queryFingerprint,
+          sql: generatedSql[0],
+          params: generatedSql[1],
+        },
+        null,
+        2
+      )
+    );
+  } catch (error) {
+    console.warn(
+      "[Cube] SQL unavailable",
+      JSON.stringify(
+        {
+          queryFingerprint,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        null,
+        2
+      )
+    );
+  }
+}
+
 export async function loadCubeQuery(
   query: CubeQuery,
   context: UserContext
 ): Promise<CubeLoadResponse> {
   const debug = isCubeDebugEnabled();
   const queryFingerprint = getQueryFingerprint(query);
+
+  if (debug) {
+    await logCubeSql(query, context, queryFingerprint);
+  }
 
   for (let attempt = 0; attempt <= MAX_CONTINUE_WAIT_RETRIES; attempt += 1) {
     const startedAt = Date.now();

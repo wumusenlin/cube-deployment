@@ -6,29 +6,49 @@ import { generateAnalytics } from "./llm";
 const meta: PublicMeta = {
   cubes: [
     {
-      name: "Orders",
-      title: "Orders",
+      name: "Reimburse",
+      title: "报销单",
       measures: [
         {
-          name: "Orders.count",
-          title: "订单数",
-          shortTitle: "订单数",
+          name: "Reimburse.count",
+          title: "报销单数量",
+          shortTitle: "报销单数量",
+          type: "number",
+        },
+        {
+          name: "Reimburse.totalAmount",
+          title: "报销金额",
+          shortTitle: "报销金额",
           type: "number",
         },
       ],
       dimensions: [
         "id",
-        "status",
-        "category",
-        "region",
+        "code",
+        "departmentId",
+        "applyUserId",
         "amount",
-        "createdAt",
+        "statusId",
+        "applyDate",
       ].map((name) => ({
-        name: `Orders.${name}`,
+        name: `Reimburse.${name}`,
         title: name,
         shortTitle: name,
-        type: name === "createdAt" ? "time" : "string",
+        type: name === "applyDate" ? "time" : "string",
       })),
+    },
+    {
+      name: "Department",
+      title: "报销部门",
+      measures: [],
+      dimensions: [
+        {
+          name: "Department.name",
+          title: "部门名称",
+          shortTitle: "部门名称",
+          type: "string",
+        },
+      ],
     },
   ],
 };
@@ -38,7 +58,7 @@ afterEach(() => {
 });
 
 describe("LLM fallback", () => {
-  it("creates a current-week order detail table", async () => {
+  it("creates a current-week reimburse detail table", async () => {
     const previousApiKey = process.env.LLM_API_KEY;
     const previousDashScopeApiKey = process.env.DASHSCOPE_API_KEY;
     delete process.env.LLM_API_KEY;
@@ -46,18 +66,19 @@ describe("LLM fallback", () => {
 
     try {
       const generated = await generateAnalytics(
-        "查询本周的订单数据列表",
+        "查询本周的报销单列表",
         meta
       );
 
       expect(generated.chart.type).toBe("table");
       expect(generated.chart.columns?.map((column) => column.member)).toContain(
-        "Orders.amount"
+        "Reimburse.amount"
       );
       expect(generated.query.timeDimensions?.[0]?.dateRange).toHaveLength(2);
-      expect(generated.query.dimensions).toContain("Orders.createdAt");
+      expect(generated.query.dimensions).toContain("Reimburse.applyDate");
+      expect(generated.query.dimensions).toContain("Department.name");
       expect(generated.query.order).toEqual({
-        "Orders.createdAt": "desc",
+        "Reimburse.applyDate": "desc",
       });
       expect(generated.query.timezone).toBe("Asia/Shanghai");
     } finally {
@@ -109,24 +130,24 @@ describe("Bailian response normalization", () => {
     const generated = await generateFromContent(
       JSON.stringify({
         query: {
-          measures: ["Orders.count"],
-          dimensions: ["Orders.id", "Orders.status"],
+          measures: ["Reimburse.count"],
+          dimensions: ["Reimburse.id", "Reimburse.statusId"],
         },
         chart: {
           type: "table",
           columns: [
-            { member: "Orders.id" },
-            { member: "Orders.status", title: "状态" },
+            { member: "Reimburse.id" },
+            { member: "Reimburse.statusId", title: "状态" },
           ],
         },
       })
     );
 
-    expect(generated.chart.value).toBe("Orders.count");
+    expect(generated.chart.value).toBe("Reimburse.count");
     expect(generated.chart.title).toBe("测试查询");
     expect(generated.chart.columns).toEqual([
-      { member: "Orders.id", title: "id", format: "number" },
-      { member: "Orders.status", title: "状态", format: "text" },
+      { member: "Reimburse.id", title: "id", format: "number" },
+      { member: "Reimburse.statusId", title: "状态", format: "text" },
     ]);
   });
 
@@ -134,47 +155,47 @@ describe("Bailian response normalization", () => {
     const generated = await generateFromContent(
       JSON.stringify({
         query: {
-          measures: ["Orders.count"],
+          measures: ["Reimburse.count"],
           timeDimensions: [
-            { dimension: "Orders.createdAt", granularity: "month" },
+            { dimension: "Reimburse.applyDate", granularity: "month" },
           ],
         },
         chart: {
           type: "line",
           title: "每月订单趋势",
-          category: "Orders.createdAt.month",
-          value: "Orders.count",
+          category: "Reimburse.applyDate.month",
+          value: "Reimburse.count",
           valueFormat: "number",
         },
       })
     );
 
-    expect(generated.chart.category).toBe("Orders.createdAt");
+    expect(generated.chart.category).toBe("Reimburse.applyDate");
   });
 
   it("normalizes array order returned by the model", async () => {
     const generated = await generateFromContent(
       JSON.stringify({
         query: {
-          measures: ["Orders.count"],
-          dimensions: ["Orders.status"],
+          measures: ["Reimburse.count"],
+          dimensions: ["Reimburse.statusId"],
           order: [
-            { member: "Orders.count", direction: "desc" },
+            { member: "Reimburse.count", direction: "desc" },
           ],
           limit: "100",
         },
         chart: {
           type: "bar",
           title: "订单状态统计",
-          category: "Orders.status",
-          value: "Orders.count",
+          category: "Reimburse.statusId",
+          value: "Reimburse.count",
           valueFormat: "number",
         },
       })
     );
 
     expect(generated.query.order).toEqual({
-      "Orders.count": "desc",
+      "Reimburse.count": "desc",
     });
     expect(generated.query.limit).toBe(100);
   });
