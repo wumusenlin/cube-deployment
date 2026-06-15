@@ -6,11 +6,9 @@ import { generateAnalytics } from "@/lib/llm";
 
 export async function POST(request: Request) {
   try {
-    console.log('request', request)
     const { prompt } = llmRequestSchema.parse(await request.json());
     const context = getUserContext();
     const meta = await fetchCubeMeta(context);
-    console.log('meta', meta)
     const generated = await generateAnalytics(prompt, meta);
 
     return Response.json(generated);

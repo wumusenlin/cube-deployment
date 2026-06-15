@@ -1,4 +1,5 @@
 import { createCubeToken, type UserContext } from "@/lib/auth";
+import { createHash } from "node:crypto";
 
 import type {
   CubeLoadResponse,
@@ -11,6 +12,17 @@ import type {
 const DEFAULT_CUBE_URL = "http://localhost:4000/cubejs-api/v1";
 const CONTINUE_WAIT_DELAY_MS = 800;
 const MAX_CONTINUE_WAIT_RETRIES = 10;
+
+function isCubeDebugEnabled(): boolean {
+  return process.env.CUBE_DEBUG === "true";
+}
+
+function getQueryFingerprint(query: CubeQuery): string {
+  return createHash("sha256")
+    .update(JSON.stringify(query))
+    .digest("hex")
+    .slice(0, 12);
+}
 
 function getCubeApiUrl(): string {
   return (process.env.CUBE_API_URL || DEFAULT_CUBE_URL).replace(/\/$/, "");
@@ -79,12 +91,54 @@ export async function loadCubeQuery(
   query: CubeQuery,
   context: UserContext
 ): Promise<CubeLoadResponse> {
+  const debug = isCubeDebugEnabled();
+  const queryFingerprint = getQueryFingerprint(query);
+
   for (let attempt = 0; attempt <= MAX_CONTINUE_WAIT_RETRIES; attempt += 1) {
+    const startedAt = Date.now();
+    if (debug) {
+      console.info(
+        "[Cube] request",
+        JSON.stringify(
+          {
+            queryFingerprint,
+            attempt: attempt + 1,
+            query,
+          },
+          null,
+          2
+        )
+      );
+    }
+
     const response = await cubeFetch("/load", context, {
       method: "POST",
       body: JSON.stringify({ query }),
     });
     const payload = (await response.json()) as CubeLoadResponse;
+    const durationMs = Date.now() - startedAt;
+
+    if (debug) {
+      console.info(
+        "[Cube] response",
+        JSON.stringify(
+          {
+            queryFingerprint,
+            attempt: attempt + 1,
+            status: response.status,
+            durationMs,
+            requestId:
+              response.headers.get("x-request-id") ??
+              response.headers.get("traceparent"),
+            continueWait: payload.error === "Continue wait",
+            error: payload.error,
+            rowCount: payload.data?.length ?? 0,
+          },
+          null,
+          2
+        )
+      );
+    }
 
     if (payload.error === "Continue wait") {
       if (attempt === MAX_CONTINUE_WAIT_RETRIES) {

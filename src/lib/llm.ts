@@ -446,9 +446,19 @@ export async function generateAnalytics(
   ).replace(/\/$/, "");
   const model =
     process.env.DASHSCOPE_MODEL || process.env.LLM_MODEL || "qwen-plus";
+  const debug = process.env.DASHSCOPE_DEBUG === "true";
   const currentWeek = getCurrentWeekDateRange();
+  const requestUrl = `${baseUrl}/chat/completions`;
+  const startedAt = Date.now();
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  if (debug) {
+    console.info(
+      "[Bailian] request",
+      JSON.stringify({ url: requestUrl, model, prompt }, null, 2)
+    );
+  }
+
+  const response = await fetch(requestUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -492,12 +502,26 @@ ${buildSemanticSchema(meta)}`,
   });
 
   const payload = (await response.json()) as LlmResponse;
+  if (debug) {
+    console.info(
+      "[Bailian] response",
+      JSON.stringify(
+        {
+          status: response.status,
+          durationMs: Date.now() - startedAt,
+          requestId: response.headers.get("x-request-id"),
+          body: payload,
+        },
+        null,
+        2
+      )
+    );
+  }
   if (!response.ok) {
     throw new Error(payload.error?.message || `LLM 请求失败: ${response.status}`);
   }
 
   const content = payload.choices?.[0]?.message?.content;
-  console.log('content', content)
   if (!content) throw new Error("LLM 返回为空");
 
   const parsed = extractJson(content) as {
@@ -514,7 +538,14 @@ ${buildSemanticSchema(meta)}`,
         normalizeGeneratedChart(parsed.chart, query, meta, prompt)
       )
     : deriveChartProtocol(query, meta, prompt);
-  console.log('query', query)
+
+  if (debug) {
+    console.info(
+      "[Bailian] normalized",
+      JSON.stringify({ query, chart }, null, 2)
+    );
+  }
+
   return {
     query,
     chart: validateChartAgainstQuery(chart, query),

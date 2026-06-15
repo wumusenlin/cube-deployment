@@ -56,6 +56,28 @@ CUBE_API_URL=http://localhost:4000/cubejs-api/v1
 默认 Compose 不向宿主机暴露 Cube；`docker-compose.dev.yml` 只绑定
 `127.0.0.1:4000`，供本地 Next.js 服务访问。
 
+## Cube 缓存调试
+
+`.env` 设置 `CUBE_DEBUG=true` 后，Next.js 终端会输出每次 Cube 查询的
+`queryFingerprint`、耗时和状态。完全相同的查询应具有相同指纹。
+
+开启 PostgreSQL SQL 日志：
+
+```bash
+npm run cache:debug:on
+npm run cache:logs
+```
+
+连续执行两次相同查询。如果第一次日志出现 `public.orders` SQL，而第二次没有，
+说明第二次命中了 Cube 查询结果缓存。当前模型没有配置 `pre_aggregations`，
+因此这里验证的不是预聚合缓存。
+
+调试结束后关闭 SQL 日志：
+
+```bash
+npm run cache:debug:off
+```
+
 ## API
 
 - `GET /api/meta`：返回可公开的语义模型成员。
